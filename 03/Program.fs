@@ -30,13 +30,26 @@ let follow cs d =
 
 let run dirs = Seq.fold follow (Seq.singleton (0,0))  dirs
 
+let manhattanD (a, b) = abs a + abs b
+
 [<EntryPoint>]
 let main argv =
     let dirs = (File.ReadAllText <| argv.[0]).Split ","
                   |> Seq.map parseDirection
 
-    let r = run dirs
-    let display = Seq.map string r |> Seq.toArray
-    printfn "%s" (String.Join ("\n", display))  
+    let players = (File.ReadLines argv.[0])
+                    |> Seq.map (fun x -> x.Split ",")
+                    |> Seq.map (Seq.map parseDirection)
+
+    let p1 = Seq.head players |> run |> Set.ofSeq
+    let p2 = (Seq.head << Seq.skip 1) players |> run |> Set.ofSeq
+    let cross = Set.intersect p1 p2 
+                  |> Set.map manhattanD
+                  |> Set.filter (fun x -> x <> 0)
+                  |> Set.maxElement 
+
+    //let r = run dirs
+    //let display = Set.map string cross |> Seq.toArray
+    printfn "%i" cross  
     
     0 // return an integer exit code
