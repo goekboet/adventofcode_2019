@@ -30,6 +30,9 @@ let follow cs d =
 
 let run dirs = Seq.fold follow (Seq.singleton (0,0))  dirs
 
+
+let cross ls (ri, rt) = Seq.tryPick (fun (li, lt) -> if rt = lt then Some (ri + li) else None) ls
+
 let manhattanD (a, b) = abs a + abs b
 
 [<EntryPoint>]
@@ -41,15 +44,21 @@ let main argv =
                     |> Seq.map (fun x -> x.Split ",")
                     |> Seq.map (Seq.map parseDirection)
 
-    let p1 = Seq.head players |> run |> Set.ofSeq
-    let p2 = (Seq.head << Seq.skip 1) players |> run |> Set.ofSeq
-    let cross = Set.intersect p1 p2 
-                  |> Set.map manhattanD
-                  |> Set.filter (fun x -> x <> 0)
-                  |> Set.minElement 
+    let p1 = Seq.head players 
+              |> run
+              |> Seq.mapi (fun i x -> (x, i))
+              |> Seq.skip 1 
 
-    //let r = run dirs
-    //let display = Set.map string cross |> Seq.toArray
-    printfn "%i" cross  
+    let p2 = (Seq.head << Seq.skip 1) players 
+              |> run 
+              |> Seq.mapi (fun i x -> (x, i))
+              |> Seq.skip 1
+              |> Map.ofSeq
+
+    let shortest = Seq.map (fun (k, rv) -> Map.tryFind k p2 |> Option.map (fun lv -> rv + lv)) p1
+                      |> Seq.choose id
+                      |> Seq.min
     
+    printfn "shortest: %i" shortest
+
     0 // return an integer exit code
