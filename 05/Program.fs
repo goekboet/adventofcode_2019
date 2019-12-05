@@ -4,68 +4,67 @@ open System
 open System.IO
 open Microsoft.FSharp.Core.Operators.Checked
 
-type ParamMode = Ref | Imm
-let pMode x = if x = '0' then Ref else Imm
+type Inputs = list<int>
+type Outputs = list<int>
+type Memories = int[]
+type Computation = Inputs * Outputs * Memories
+
+let getParam (m, pt) (ms : Memories) =
+    match m with
+        | '0' -> let v = ms.[pt] in ms.[v]
+        | _   -> ms.[pt]
 
 type Pos = int
-type Op = ParamMode * int
+type Par = int
 
 type Opcode 
-    = Add of Op * Op * Pos
-    | Mul of Op * Op * Pos
+    = Add of Par * Par * Pos
+    | Mul of Par * Par * Pos
     | Inp of Pos
     | Out of Pos
     | Hal
 
-let width c =
-    match c with
-        | Add _ -> 4
-        | Mul _ -> 4
-        | Inp _ -> 2
-        | Out _ -> 2
-        | Hal   -> 0
-
-
-let parseOpcode p (xs : int[]) = 
-    let c = sprintf "%05i" (xs.[p])
+let parseOpcode p (ms : Memories) = 
+    let c = sprintf "%05i" (ms.[p])
     match (int c.[3..], c.[..2]) with
-        | (1, modes) -> Add ((pMode modes.[2], xs.[p + 1]), (pMode modes.[1], xs.[p + 2]), xs.[p + 3])
-        | (2, modes) -> Mul ((pMode modes.[2], xs.[p + 1]), (pMode modes.[1], xs.[p + 2]), xs.[p + 3])
-        | (3, _    ) -> Inp xs.[p + 1]
-        | (4, _    ) -> Out xs.[p + 1]
+        | (1, modes) -> Add ( getParam (modes.[2], p + 1) ms
+                            , getParam (modes.[1], p + 2) ms
+                            , ms.[p + 3])
+        | (2, modes) -> Mul ( getParam (modes.[2], p + 1) ms
+                            , getParam (modes.[1], p + 2) ms
+                            , ms.[p + 3])
+        | (3, _    ) -> Inp ms.[p + 1]
+        | (4, modes) -> Out (getParam (modes.[2], p + 1) ms)
         | _          -> Hal
 
-
-
-
-
-let opCode1 (p:int) (xs:int[]) =
-    let (lhs, rhs, reg) = (xs.[p + 1], xs.[p + 2], xs.[p + 3])
-    // printfn "p: %i lhs: %i rhs %i reg %i" p lhs rhs reg
-
-    Array.set xs reg (xs.[lhs] + xs.[rhs])
-
-    xs
-
- 
-
-let opCode2 (p:int) (xs:int[]) =
-    let (lhs, rhs, reg) = (xs.[p + 1], xs.[p + 2], xs.[p + 3])
-
-    Array.set xs reg (xs.[lhs] * xs.[rhs])
-
-    xs
-
- 
-
-let rec compute (p:int) (xs:int[]) =
-    match xs.[p] with
-        | 1  -> let xs2 = opCode1 p xs in compute (p + 4) xs2
-        | 2  -> let xs2 = opCode2 p xs in compute (p + 4) xs2
-        | 99 -> xs
-        | _  -> [||]
-
+let rec compute (is, os, ms : Memories) pt =
+    let opc = parseOpcode pt ms
+    
+    match opc with
+        | Add (lhs, rhs, reg) ->
+            Array.set ms reg (lhs + rhs)
+            compute (is, os, ms) (pt + 4)
+        | Mul (lhs, rhs, reg) ->
+            Array.set ms reg (lhs * rhs)
+            compute (is, os, ms) (pt + 4)
+        | Inp p ->
+            let (i, is') = (List.head is, List.tail is)
+            Array.set ms p i
+            compute (is', os, ms) (pt + 2)
+        | Out p ->
+            let os' = p :: os
+            compute (is, os', ms) (pt + 2)
+        | _     -> (is, os, ms)
+                      
 [<EntryPoint>]
 let main argv =
-    printfn "Hello World from F#!"
+    let ms = (File.ReadAllText argv.[0]).Split([|','|])
+                |> Array.map int
+
+    let is = List.singleton 1
+    let os = List.empty
+    
+    let (_, os', ms') = compute (is, os, ms) 0 
+    printfn "Output:\n%s" <| String.Join ("\n", List.map string os' |> List.toArray)
+    
     0 // return an integer exit code
