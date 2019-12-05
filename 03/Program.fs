@@ -46,7 +46,7 @@ let main argv =
     let cross = Set.intersect p1 p2 
                   |> Set.map manhattanD
                   |> Set.filter (fun x -> x <> 0)
-                  |> Set.maxElement 
+                  |> Set.minElement 
 
     //let r = run dirs
     //let display = Set.map string cross |> Seq.toArray
