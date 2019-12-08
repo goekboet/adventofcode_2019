@@ -110,7 +110,7 @@ let rec permute = function
 
 type Phasesetting = list<int>
 
-let computePS ((is, os, ms): Computation) (s:int) =
+let computePS ((is, _, ms): Computation) (s:int) =
     let is' = s :: is 
     let (_, os', _) = compute (is', [], Array.copy ms) 0
     (os', os', ms)
@@ -125,7 +125,7 @@ let main argv =
     let ms = (File.ReadAllText argv.[0]).Split([|','|])
                 |> Array.map int
 
-    let ps = permute [0;1;2;3;4]
+    let ps = permute [0 .. 4]
     let (_, o, _) = List.map (chain (init ms)) ps
                       |> List.maxBy (fun (_, os, _) -> List.head os)
 
