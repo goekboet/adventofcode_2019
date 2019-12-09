@@ -7,7 +7,7 @@ open Microsoft.FSharp.Core.Operators.Checked
 let reduceLayer l = 
     let ones = (List.filter ((=) 1) l).Length
     let twos = (List.filter ((=) 2) l).Length
-    printfn "%A" l
+    
     ones * twos
 
 let charToInt (c : char) = int c - int '0'
@@ -15,7 +15,7 @@ let charToInt (c : char) = int c - int '0'
 let getLayer (s : list<char>) = 
     s
     |> List.map charToInt
-    |> List.chunkBySize (8 * 25)
+    |> List.chunkBySize (6 * 25)
     |> List.minBy (fun x -> (List.filter ((=) 0) x).Length)
     |> reduceLayer
 
