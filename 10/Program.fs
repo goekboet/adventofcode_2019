@@ -18,6 +18,7 @@ let readPos (map : Map) =
     |> Seq.collect place
     |> Set.ofSeq
 
+
 [<EntryPoint>]
 let main argv =
     let map = File.ReadAllLines("test.txt")
