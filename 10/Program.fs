@@ -56,11 +56,37 @@ let mostLineOfSights (map : Set<Position>) =
         |> List.map (fun (k, ps) -> (k, (List.map (fun p -> firstCollision map p) ps |> List.distinct).Length ))
         |> List.maxBy snd    
 
+type Direction = U | R | D | L
+let clockwise = [U;R;D;L]
+
+let steps = Seq.initInfinite id |> Seq.collect (fun x -> [x + 1;x + 1])
+let dirs  = Seq.initInfinite id |> Seq.collect (fun _ -> clockwise)
+let cwSpiral = Seq.zip dirs steps
+
+
+let move (x, y) (dir, offset) =
+    match dir with
+        | U -> (x, y + offset)
+        | R -> (x + offset, y)
+        | D -> (x, y - offset)
+        | L -> (x - offset, y)
+
+let cwSpiralFrom x =
+    Seq.scan move x cwSpiral |> Seq.pairwise |> Seq.collect (fun (a, b) -> inLine a b |> Seq.skip 1)
+
+let cwSpiralOrder origin map =
+    cwSpiralFrom origin 
+    |> Seq.scan (fun (uo, o) x -> if Set.contains x uo then (Set.remove x uo, x :: o) else (uo, o)) (map, [])
+    |> Seq.skipWhile (fun (uo, o) -> not <| Set.isEmpty uo)
+    |> Seq.head
+    |> snd
+    |> Seq.rev
+
 [<EntryPoint>]
 let main argv =
     let map = File.ReadAllLines(argv.[0])
                 |> readPos
-               
+    
     let r = mostLineOfSights map
     
     printfn "Monitor: %s" <| string r
