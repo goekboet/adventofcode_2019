@@ -87,7 +87,8 @@ let main argv =
     let map = File.ReadAllLines(argv.[0])
                 |> readPos
     
-    let r = mostLineOfSights map
+    let (o, _) = mostLineOfSights map
     
-    printfn "Monitor: %s" <| string r
+    
+    //printfn "Monitor: %s" <| string r
     0 // return an integer exit code
