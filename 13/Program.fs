@@ -3,12 +3,36 @@
 open System
 open System.IO
 open Microsoft.FSharp.Core.Operators.Checked
+open System.Threading
 
 type Inputs = list<int64>
 type Outputs = list<int64>
 type Memories = int64[]
 type RelativeBase = int
-type Computation = Inputs * Outputs * Memories * RelativeBase
+
+type Score = int
+type Vector = int * int
+type TileId
+    = Empty = 0
+    | Wall = 1
+    | Block = 2
+    | Paddle = 3
+    | Ball = 4
+
+type GameState
+    = list<Map<Vector, TileId>>
+    * list<Score>
+
+let changegameState ((ts, sc) : GameState) (os : list<int64>)
+    =
+    match os with
+    | [s; 0L; -1L] -> ((ts, int s :: sc), [])
+    | [tId; y; x] -> ((Map.add (int x, int y) (enum<TileId>(int tId)) (List.head ts) :: ts, sc), [])
+    | _           -> ((ts, sc), os)
+
+
+
+type Computation = Inputs * Outputs * Memories * RelativeBase * GameState
 
 let readParam (m, pt) (ms : Memories) (rb : RelativeBase) =
     match m with
@@ -66,98 +90,90 @@ let parseOpcode p (ms : Memories) (rb : RelativeBase) =
         | (9, modes) -> MRBase ( readParam (modes.[2], p + 1) ms rb) 
         | _          -> Hal
 
-let rec compute (is, os, ms : Memories, rb : RelativeBase) pt =
+
+
+type Command = Left = -1L | Noop = 0L | Right = 1L
+
+let initGameState : GameState = ([Map.empty], [])
+
+let rec compute (is, os, ms : Memories, rb : RelativeBase, gs : GameState) pt =
     let opc = parseOpcode pt ms rb
     
     match opc with
         | Add (lhs, rhs, reg) ->
             Array.set ms (int reg) (lhs + rhs)
-            compute (is, os, ms, rb) (pt + 4)
+            compute (is, os, ms, rb, gs) (pt + 4)
         | Mul (lhs, rhs, reg) ->
             Array.set ms (int reg) (lhs * rhs)
-            compute (is, os, ms, rb) (pt + 4)
+            compute (is, os, ms, rb, gs) (pt + 4)
         | Inp p ->
             let (i, is') = (List.head is, List.tail is)
             Array.set ms (int p) i
-            compute (is', os, ms, rb) (pt + 2)
+            compute (is', os, ms, rb, gs) (pt + 2)
         | Out p ->
             let os' = p :: os
-            compute (is, os', ms, rb) (pt + 2)
+            let (gs', os'') = changegameState gs os'
+            compute (is, os'', ms, rb, gs') (pt + 2)
         | Jit (pred, v) ->
             if pred <> 0L
-            then compute (is, os, ms, rb) (int v)
-            else compute (is, os, ms, rb) (pt + 3)
+            then compute (is, os, ms, rb, gs) (int v)
+            else compute (is, os, ms, rb, gs) (pt + 3)
         | Jif (pred, v) ->
             if pred = 0L
-            then compute (is, os, ms, rb) (int v)
-            else compute (is, os, ms, rb) (pt + 3)
+            then compute (is, os, ms, rb, gs) (int v)
+            else compute (is, os, ms, rb, gs) (pt + 3)
         | Lt (p1, p2, pos) ->
             if p1 < p2
             then Array.set ms (int pos) 1L
             else Array.set ms (int pos) 0L
-            compute (is, os, ms, rb) (pt + 4)
+            compute (is, os, ms, rb, gs) (pt + 4)
         | Eq (p1, p2, pos) ->
             if (p1 = p2)
             then Array.set ms (int pos) 1L
             else Array.set ms (int pos) 0L
-            compute (is, os, ms, rb) (pt + 4)
-        | MRBase c -> compute (is, os, ms, rb + (int c)) (pt + 2)
-        | _     -> (is, os, ms, rb)
+            compute (is, os, ms, rb, gs) (pt + 4)
+        | MRBase c -> compute (is, os, ms, rb + (int c), gs) (pt + 2)
+        | _     -> (is, os, ms, rb, gs)
 
-let init (ms : Memories) (prg : int64[]) (inp : Inputs) = 
+let init (ms : Memories) (prg : int64[]) (inp : Inputs) : Computation = 
     Array.blit prg 0 ms 0 prg.Length
 
-    (inp, [], ms, 0 )
+    (inp, [], ms, 0, initGameState )
 
-type TileId
-    = Empty
-    | Wall
-    | Block
-    | Paddle
-    | Ball
+let screenwidth = 39
+let screenHeight = 25
 
-type Vector = int64 * int64
-
-type Tile = Vector * TileId
-
-let toTileId (i : int64) =
-    match i with
-    | 1L -> Wall
-    | 2L -> Block
-    | 3L -> Paddle
-    | 4L -> Ball
-    | _  -> Empty
-
-let tileToChar t =
-    match t with
-    | Wall   -> '▩'
-    | Block  -> '▢'
-    | Paddle -> '▬'
-    | Ball   -> '◎'
-    | _      -> ' '
-
-let toTile (xs : list<int64>) = 
-    ((xs.[0], xs.[1]), toTileId xs.[2])
-
-let toGame (xs : list<int64>) : (list<int64> * list<Tile>) =
-    let (score, ts) = 
-        List.chunkBySize 3 xs
-        |> List.partition (fun x -> x.[0] < 0L && x.[1] = 0L)
-    
-    ( List.map (fun (s : list<int64>) -> s.[2]) score
-    , List.map toTile ts)
-
-let toScreen ts 
+let showTile t
     =
-    List.groupBy 
-        (fun ((x, y), _) -> y) ts
-    |> List.sortBy 
-        (fun (y, xs) -> y)
-    |> List.map 
-        (fun (y, xs) -> 
-            List.sortBy (fun ((x, y), _) -> x) xs
-            |> List.map (tileToChar << snd)
-            |> (fun x -> String (List.toArray x)))
+    match t with
+    | TileId.Empty  -> ' '
+    | TileId.Wall   -> '▩'
+    | TileId.Block  -> '▢'
+    | TileId.Paddle -> '▬'
+    | _             -> '◎'
+
+let showScreenRow (ts : Map<Vector, TileId>) (y : int)
+    =
+    let toVector x = (x, y) 
+    let lookup x = 
+        Map.tryFind x ts
+        |> Option.defaultValue TileId.Empty
+
+    let toRow tIds = new string(tIds |> Array.ofSeq)
+
+    toRow ({0 .. screenwidth} |> Seq.map (showTile << lookup << toVector))
+    
+
+let showGamestate (ts : Map<Vector, TileId>)
+    =
+    {0 .. screenHeight}
+    |> Seq.map (showScreenRow ts)
+
+let clearScreen w h =
+    Thread.Sleep (TimeSpan.FromSeconds(0.2))
+    Console.SetCursorPosition (0,0)
+    Console.Clear ()
+
 
 
 [<EntryPoint>]
@@ -168,16 +184,27 @@ let main argv =
 
     let ms = Array.create (1000 * 1000) 0L
 
-    let is = 
-        0L :: 0L :: 1L :: 1L :: 1L :: 1L :: 1L :: 1L :: 
-        List.replicate 100 0L
+    let is = List.replicate 50000 0L
     
-    let (_, os', ms', _) = compute (init ms prg is) 0 
+    let (_, _, _, _, (gs', sc)) = compute (init ms prg is) 0
     
-    List.iter (printfn "%i") (List.rev os') 
+    gs' |> Seq.rev
+        |> Seq.filter (Map.containsKey (screenwidth, screenHeight)) 
+        |> Seq.iter 
+            (fun g -> 
+                ignore (clearScreen 30 40)
+                let px = showGamestate g
+                px |> Seq.iter (fun x -> Console.WriteLine(x)))
+            
+    // printfn "score: %i" (List.head sc)
 
-    let (ss, ts) = 
-        toGame (List.rev os')
+
+    
+
+    // List.iter (printfn "%i") (List.rev os') 
+
+    // let (ss, ts) = 
+    //     toGame (List.rev os')
     
     // let (_, v) =
     //     List.countBy snd g
