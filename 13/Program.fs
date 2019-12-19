@@ -112,40 +112,19 @@ let lastPos
     =
     Map.tryPick (fun p t -> if t = tId && b <> p then Some p else None) ts
 
-let followBall ((x', y') : Vector) ((pX', pY') : Vector) ((pX, pY) : Vector) ((x, y) : Vector) 
+let followBall ((x', _) : Vector) ((pX', _) : Vector)  
     =
-    let nX = 
-        if x > x' then x' - 1
-        else x' + 1
-
-    let bounce = (y' = 23)
-    // let nX' =
-    //     if bounce && (pX - pX') < 1 then (abs nX)
-    //     elif bounce && (pX - pX') = 1 then -nX
-    //     else nX
-    
-    if (not bounce) && (pX' > nX) then - 1
-        elif (not bounce) && (pX' < nX) then 1
-        else 0
+    if pX' > x' then -1
+    elif pX' < x' then 1
+    else 0
 
 let computeInput ((ts, _) : GameState)
     =
     let t1 = List.head ts
-    let p' = getTileId TileId.Paddle t1
-    let p =
-        ts
-        |> Seq.tryPick (fun m -> lastPos TileId.Paddle p' m)
-        |> Option.defaultValue p'
-    
-    let b' = getTileId TileId.Ball t1
-    let b = 
-        ts
-        |> Seq.tryPick (fun m -> lastPos TileId.Ball b' m)
+    let p = getTileId TileId.Paddle t1
+    let b = getTileId TileId.Ball t1
 
-    Option.map (followBall b' p' p) b
-        |> Option.defaultValue 0
-
-
+    followBall b p
 
 let init (ms : Memories) (prg : int64[]) (inp : Inputs) : Computation = 
     Array.blit prg 0 ms 0 prg.Length
@@ -201,10 +180,10 @@ let showTile t
     =
     match t with
     | TileId.Empty  -> ' '
-    | TileId.Wall   -> '▩'
-    | TileId.Block  -> '▢'
-    | TileId.Paddle -> '▬'
-    | _             -> '◎'
+    | TileId.Wall   -> 'X'
+    | TileId.Block  -> '.'
+    | TileId.Paddle -> '_'
+    | _             -> 'O'
 
 let showScreenRow (ts : Map<Vector, TileId>) (y : int)
     =
@@ -224,11 +203,9 @@ let showGamestate (ts : Map<Vector, TileId>)
     |> Seq.map (showScreenRow ts)
 
 let clearScreen w h =
-    Thread.Sleep (TimeSpan.FromSeconds(0.5))
+    Thread.Sleep (TimeSpan.FromSeconds(0.2))
     Console.SetCursorPosition (0,0)
     Console.Clear ()
-
-
 
 [<EntryPoint>]
 let main argv =
@@ -242,7 +219,8 @@ let main argv =
     
     let (_, _, _, _, (gs', sc)) = compute (init ms prg is) 0
     
-    gs' |> Seq.rev
+    let debug = if (List.head sc) = 0 then Seq.rev gs' else Seq.empty
+    debug 
         |> Seq.filter (Map.containsKey (screenwidth, screenHeight)) 
         |> Seq.iter 
             (fun g -> 
@@ -250,25 +228,6 @@ let main argv =
                 let px = showGamestate g
                 px |> Seq.iter (fun x -> Console.WriteLine(x)))
             
-    // printfn "score: %i" (List.head sc)
-
-
-    
-
-    // List.iter (printfn "%i") (List.rev os') 
-
-    // let (ss, ts) = 
-    //     toGame (List.rev os')
-    
-    // let (_, v) =
-    //     List.countBy snd g
-    //     |> List.find (fun (k, _) -> k = Block)
-
-    // printfn "block tiles: %i" v
-
-    // toScreen ts
-    // |> List.iter (printfn "%s")
-
-    // printfn "%A" ss
+    printfn "score: %i" (List.head sc)
 
     0 // return an integer exit code
