@@ -23,12 +23,7 @@ type GameState
     = list<Map<Vector, TileId>>
     * list<Score>
 
-let changegameState ((ts, sc) : GameState) (os : list<int64>)
-    =
-    match os with
-    | [s; 0L; -1L] -> ((ts, int s :: sc), [])
-    | [tId; y; x] -> ((Map.add (int x, int y) (enum<TileId>(int tId)) (List.head ts) :: ts, sc), [])
-    | _           -> ((ts, sc), os)
+
 
 
 
@@ -96,6 +91,67 @@ type Command = Left = -1L | Noop = 0L | Right = 1L
 
 let initGameState : GameState = ([Map.empty], [])
 
+let changegameState ((ts, sc) : GameState) (os : list<int64>)
+    =
+    match os with
+    | [s; 0L; -1L] -> ((ts, int s :: sc), [])
+    | [tId; y; x] -> ((Map.add (int x, int y) (enum<TileId>(int tId)) (List.head ts) :: ts, sc), [])
+    | _           -> ((ts, sc), os)
+
+
+let getTileId 
+    (tId : TileId) 
+    (ts : Map<Vector,TileId>) 
+    =
+    Map.pick (fun p t -> if t = tId then Some p else None) ts
+
+let lastPos
+    (tId : TileId)
+    (b : Vector)
+    (ts : Map<Vector,TileId>)
+    =
+    Map.tryPick (fun p t -> if t = tId && b <> p then Some p else None) ts
+
+let followBall ((x', y') : Vector) ((pX', pY') : Vector) ((pX, pY) : Vector) ((x, y) : Vector) 
+    =
+    let nX = 
+        if x > x' then x' - 1
+        else x' + 1
+
+    let bounce = (y' = 23)
+    // let nX' =
+    //     if bounce && (pX - pX') < 1 then (abs nX)
+    //     elif bounce && (pX - pX') = 1 then -nX
+    //     else nX
+    
+    if (not bounce) && (pX' > nX) then - 1
+        elif (not bounce) && (pX' < nX) then 1
+        else 0
+
+let computeInput ((ts, _) : GameState)
+    =
+    let t1 = List.head ts
+    let p' = getTileId TileId.Paddle t1
+    let p =
+        ts
+        |> Seq.tryPick (fun m -> lastPos TileId.Paddle p' m)
+        |> Option.defaultValue p'
+    
+    let b' = getTileId TileId.Ball t1
+    let b = 
+        ts
+        |> Seq.tryPick (fun m -> lastPos TileId.Ball b' m)
+
+    Option.map (followBall b' p' p) b
+        |> Option.defaultValue 0
+
+
+
+let init (ms : Memories) (prg : int64[]) (inp : Inputs) : Computation = 
+    Array.blit prg 0 ms 0 prg.Length
+
+    (inp, [], ms, 0, initGameState )
+
 let rec compute (is, os, ms : Memories, rb : RelativeBase, gs : GameState) pt =
     let opc = parseOpcode pt ms rb
     
@@ -107,9 +163,10 @@ let rec compute (is, os, ms : Memories, rb : RelativeBase, gs : GameState) pt =
             Array.set ms (int reg) (lhs * rhs)
             compute (is, os, ms, rb, gs) (pt + 4)
         | Inp p ->
-            let (i, is') = (List.head is, List.tail is)
-            Array.set ms (int p) i
-            compute (is', os, ms, rb, gs) (pt + 2)
+            let i = computeInput gs
+
+            Array.set ms (int p) (int64 i)
+            compute ([], os, ms, rb, gs) (pt + 2)
         | Out p ->
             let os' = p :: os
             let (gs', os'') = changegameState gs os'
@@ -135,10 +192,7 @@ let rec compute (is, os, ms : Memories, rb : RelativeBase, gs : GameState) pt =
         | MRBase c -> compute (is, os, ms, rb + (int c), gs) (pt + 2)
         | _     -> (is, os, ms, rb, gs)
 
-let init (ms : Memories) (prg : int64[]) (inp : Inputs) : Computation = 
-    Array.blit prg 0 ms 0 prg.Length
 
-    (inp, [], ms, 0, initGameState )
 
 let screenwidth = 39
 let screenHeight = 25
@@ -170,7 +224,7 @@ let showGamestate (ts : Map<Vector, TileId>)
     |> Seq.map (showScreenRow ts)
 
 let clearScreen w h =
-    Thread.Sleep (TimeSpan.FromSeconds(0.2))
+    Thread.Sleep (TimeSpan.FromSeconds(0.5))
     Console.SetCursorPosition (0,0)
     Console.Clear ()
 
