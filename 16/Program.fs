@@ -71,7 +71,12 @@ let showAppliedPattern (is : list<int>) h
 
     String.Join("\n", r)
     
+let phase2 (is : list<int>)
+    =
+    let lastd i = (%) i 10
 
+    seq { 0 .. is.Length - 1 }
+    |> Seq.map (lastd << Seq.sum << applypattern is)
 
 [<EntryPoint>]
 let main argv =
