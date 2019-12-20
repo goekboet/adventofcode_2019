@@ -73,7 +73,7 @@ let showAppliedPattern (is : list<int>) h
     
 let phase2 (is : list<int>)
     =
-    let lastd i = (%) i 10
+    let lastd i = (%) (abs i) 10
 
     seq { 0 .. is.Length - 1 }
     |> Seq.map (lastd << Seq.sum << applypattern is)
