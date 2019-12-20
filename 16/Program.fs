@@ -49,6 +49,27 @@ let showpattern w h
 
     String.Join("\n", r)
     
+let applypattern (is : list<int>) (y : int)  
+    =
+    let mul (a,b) = a * b
+    let p = pattern is.Length y
+    Seq.zip is p
+    |> Seq.map mul
+
+let showAppliedPattern (is : list<int>) h
+    =
+    let p is y =
+        applypattern is y
+        |> Seq.map (sprintf "%3i") 
+        |> Seq.toArray
+        |> (fun ss -> String.Join ("", ss))
+
+    let r =
+        seq { 0 .. (h - 1) }
+        |> Seq.map (p is)
+        |> Seq.toArray
+
+    String.Join("\n", r)
     
 
 
