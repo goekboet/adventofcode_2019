@@ -109,7 +109,50 @@ let init (ms : Memories) (prg : int64[]) (inp : Inputs) =
 
     (inp, [], ms, 0 )
 
+let showOutput (os : list<int64>)
+    =
+    let s = List.map char os |> List.toArray
+    
+    String(s)
 
+type Vector = (int * int)
+
+let model (cs : list<Char>) : Map<Vector, Char>
+    =
+    let row c = c <> '\n'
+    let w =
+        List.skipWhile (not << row) cs
+        |> List.takeWhile row
+        |> List.length 
+    
+    List.filter row cs
+    |> List.mapi (fun i c -> ((i % w), i / w), c)
+    |> Map.ofList
+
+let excludeBorder (model : Map<Vector, Char>) : list<Vector> 
+    =
+    let vs = 
+        Map.toList model
+        |> List.map fst
+    
+    let w = List.maxBy fst vs |> fst
+    let h = List.maxBy snd vs |> snd
+
+    let border (x, y)
+        =
+        x = 0 || x = w || y = 0 || y = h 
+
+    List.filter (not << border) vs
+     
+let isIntersection (model : Map<Vector, Char> ) ((x, y) : Vector)
+    =
+    let c = Map.find (x    , y    ) model
+    let n = Map.find (x    , y + 1) model
+    let e = Map.find (x + 1, y    ) model
+    let s = Map.find (x    , y - 1) model
+    let w = Map.find (x - 1, y    ) model
+    
+    c = '#' && n = '#' && e = '#' && s = '#' && w = '#'          
 
 [<EntryPoint>]
 let main argv =
@@ -122,5 +165,14 @@ let main argv =
     
     let (_, os', ms', _) = compute (init ms prg is) 0 
     
-    printfn "%A" os'
-    0 // return an integer exit code
+    let m = model (os' |> List.rev |> List.map char)
+    let r =
+        excludeBorder m
+        |> List.filter (isIntersection m)
+        
+    
+    printfn "%s" <| showOutput os'
+    printfn "\n\nintersection count: %i" (r |> List.length)
+    printfn "result: %i" (r |> List.sumBy (fun (x, y) -> x * y))
+    
+    0

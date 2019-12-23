@@ -3,36 +3,42 @@
 open System
 open System.IO
 
-let basePattern = [0;1;0;-1]
-
 let char2int c = int c - int '0'
 
-let LastDigit = char2int << Seq.last << string
-
-let nthPattern n =
-    Seq.initInfinite (fun _ -> Seq.collect (fun x -> Seq.replicate n x) basePattern)
-    |> Seq.collect id
-    |> Seq.skip 1
- 
-let phase (n : int) (is : seq<int>) 
+let pattern2 (x : int) (y: int)
     =
-    Seq.zip is (nthPattern n)
-    |> Seq.sumBy (fun (a,b) -> a * b)
-    |> LastDigit
-
-let compute (is : seq<int>)
-    =
-    {1 .. Seq.length is}
-    |> Seq.map (fun i -> phase i is)
-    |> Seq.toList
-    
-let showIs (is : seq<int>) = String.Join ("", Seq.map string is |> Seq.toArray)
-
-let first8 (is : seq<int>) = Seq.take 8 is |> showIs
+    let p = [0;1;0;-1]
+    p.[((x + 1) / (y + 1) ) % p.Length]
 
 let pattern w (h : int) : seq<int> =
     let p = [0;1;0;-1]
     seq { for i in 0 .. (w - 1) do yield p.[(((i+1) / (h + 1)) % 4)] }
+
+let applypattern (is : list<int>) (y : int)  
+    =
+    let mul (a,b) = a * b
+    let p = pattern is.Length y
+    Seq.zip is p
+    |> Seq.map mul
+
+let phase (is : list<int>)
+    =
+    let lastd i = (%) (abs i) 10
+
+    seq { 0 .. is.Length - 1 }
+    |> Seq.map (lastd << Seq.sum << applypattern is)
+    |> Seq.toList
+
+let phaseFromRight (is : list<int>)
+    =
+    let next (v : int) (s : option<int>)
+        =
+        match s with
+        | Some x -> let r = (v + x) % 10 in (r, Some r)
+        | None   -> (v           , Some v) 
+    
+    List.mapFoldBack next is None
+    |> fst
 
 let showpattern w h
     =
@@ -48,13 +54,6 @@ let showpattern w h
         |> Seq.toArray
 
     String.Join("\n", r)
-    
-let applypattern (is : list<int>) (y : int)  
-    =
-    let mul (a,b) = a * b
-    let p = pattern is.Length y
-    Seq.zip is p
-    |> Seq.map mul
 
 let showAppliedPattern (is : list<int>) h
     =
@@ -70,31 +69,59 @@ let showAppliedPattern (is : list<int>) h
         |> Seq.toArray
 
     String.Join("\n", r)
-    
-let phase2 (is : list<int>)
-    =
-    let lastd i = (%) (abs i) 10
 
-    seq { 0 .. is.Length - 1 }
-    |> Seq.map (lastd << Seq.sum << applypattern is)
+let toString (sep : string) (arr : array<string>) = String.Join (sep, arr)
+
+let showphases (is : list<int>) count 
+    =
+    let fmt = toString "" << Seq.toArray << Seq.map (sprintf "%i")
+
+    { 1 .. count }
+    |> Seq.scan (fun s _ -> phaseFromRight s) is
+    |> Seq.map fmt
+    |> Seq.toArray
+    |> toString "\n"
+
+let repeatInput (is : list<int>) (i : int)
+    =
+    let is' = is |> List.toArray
+    is'.[i % is'.Length]
+
+let offset (data : list<int>) 
+    =
+    let digits = List.take 7 data |> List.toArray
+    String.Join ("", digits) |> int
+    
 
 [<EntryPoint>]
 let main argv =
     let data = 
         File.ReadAllText argv.[0]
         |> Seq.map char2int
+        |> Seq.toList
 
-    let data' = Seq.collect (fun _ -> data) {0 .. 999} |> Seq.toList
-    let offset = Seq.take 7 data' |> showIs |> int
-    printfn "offset: %i" offset
+    let off = offset data
 
-    let drive = Seq.initInfinite id
-    let is = Seq.scan (fun s _ -> compute s) data' drive |> Seq.skip 100 |> Seq.head
-    
-    let r = Seq.skip offset is |> first8
-    printfn "%s" r
-    // Seq.map showIs is
-    //   |> Seq.iteri (fun i x -> printfn "%5i %s" i x)
+    let signal = 
+        seq { off .. (data.Length * 10000) - 1 }
+        |> Seq.map (repeatInput data)
+        |> Seq.toList
 
-    //printfn "%s" (first8 is)
+    printfn "offset:        %i" off
+    printfn "signal tail:   %i" signal.Length
+    printfn "total          %i" (off + signal.Length)
+
+    let phases =
+        seq { 1 .. 100 }
+        |> Seq.scan (fun s _ -> phaseFromRight s) signal
+
+    let show is = 
+        String.Join("", is |> Seq.map string |> Seq.take 8 |> Seq.toArray) 
+
+    let r = 
+        Seq.rev phases
+        |> Seq.head
+        |> show
+
+    printfn "result:        %s" r
     0 // return an integer exit code
