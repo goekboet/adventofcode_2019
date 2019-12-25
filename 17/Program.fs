@@ -116,6 +116,9 @@ let showOutput (os : list<int64>)
     String(s)
 
 type Vector = (int * int)
+let add ((x, y) : Vector) ((x', y') : Vector)
+    =
+    (x + x', y + y')
 
 let model (cs : list<Char>) : Map<Vector, Char>
     =
@@ -154,6 +157,132 @@ let isIntersection (model : Map<Vector, Char> ) ((x, y) : Vector)
     
     c = '#' && n = '#' && e = '#' && s = '#' && w = '#'          
 
+let part1 (m : Map<Vector,Char>)
+    =
+    excludeBorder m
+    |> List.filter (isIntersection m)
+
+type Direction = N | E | S | W
+type Turn = L | R
+type Instruction = Turn * int
+let fwd ((t, s) : Instruction) = (t, s + 1) 
+let showPath ((t, s) : Instruction)
+    = sprintf "%A%i" t s
+let fromString (s : string)
+    =
+    match (s.Substring (0,1), s.Substring (1, s.Length - 1)) with
+    | ("R", n) -> (R, int n)
+    | (_, n) -> (L, int n)
+
+type Robot = Vector * Direction
+
+let initialRobot (m : Map<Vector, Char>)
+    =
+    let robot (_,c) =
+        List.contains c ['<';'^';'>';'v']
+    let dir c =
+        match c with
+        | '<' -> W
+        | '^' -> N
+        | '>' -> E
+        | _   -> S
+
+    let (pos, char) =
+        Map.toSeq m
+        |> Seq.find robot
+
+    (pos, dir char)
+
+let possibleNext (r: Robot)
+    =
+    match r with // F, R, L
+    | ((x, y), N) -> ((x    , y - 1), (x + 1, y    ), (x - 1, y    ))
+    | ((x, y), E) -> ((x + 1, y    ), (x    , y + 1), (x    , y - 1))
+    | ((x, y), S) -> ((x    , y + 1), (x - 1, y    ), (x + 1, y    ))
+    | ((x, y), W) -> ((x - 1, y    ), (x    , y - 1), (x,     y + 1))
+
+let turnLeft (r: Robot) : Robot 
+    =
+    match r with
+    | (v, N) -> (v, W)
+    | (v, E) -> (v, N)
+    | (v, S) -> (v, E)
+    | (v, W) -> (v, S)
+
+let turnRight (r : Robot) : Robot
+    =
+    match r with
+    | (v, N) -> (v, E)
+    | (v, E) -> (v, S)
+    | (v, S) -> (v, W)
+    | (v, W) -> (v, N)
+
+let rec pathToEnd 
+    (map : Map<Vector,Char>) 
+    (rbt : Robot) 
+    (is : list<Instruction>)
+    : list<Instruction>
+    =
+    let get v = Map.tryFind v map |> Option.defaultValue '.'
+    let (f, r, v) = possibleNext rbt
+    
+    match (get f, get r, get v) with
+    | ('.', '.', '.') -> is
+    | ('#', _  , _)  -> pathToEnd map (f, snd rbt)    (fwd (List.head is) :: List.tail is)
+    | (_  , '#', _)  -> pathToEnd map (turnRight rbt) ((R, 0) :: is)
+    | _              -> pathToEnd map (turnLeft rbt)  ((L, 0) :: is)
+
+let path = [|"R4"; "L12"; "L10"; "R12"; "R12"; "L4"; "L12"; "R12"; "L4"; "L12"; "R12";
+    "R8"; "L10"; "R12"; "R8"; "L10"; "L4"; "L12"; "L10"; "R12"; "R12"; "L4";
+    "L12"; "R12"; "L4"; "L12"; "R12"; "R8"; "L10"; "L4"; "L12"; "L10"; "R12"|]
+
+let ps : seq<Instruction> = path |> Seq.map fromString
+
+let asInput (is : seq<Instruction>)
+    =
+    let toInput (d, n) = string d + "," + string n
+    let join (s : seq<string>) = String.Join (",", s |> Seq.toArray)
+    
+    Seq.map toInput is |> join
+
+let prefixList (xs : list<'A>)
+    =
+    { 1 .. xs.Length }
+    |> Seq.map (fun i -> List.take i xs)
+
+let possiblePrefixes (is : list<Instruction>)
+    =
+    let possible x = (asInput x).Length < 21  
+    prefixList is
+    |> Seq.takeWhile possible
+
+let row (m : Map<Vector, Char>) (y : int)
+    =
+    let onRow n ((_, y), _) = n = y
+    let byX ((x, _), _) = x
+
+    let r = 
+        Map.toSeq m
+        |> Seq.filter (onRow y)
+        |> Seq.sortBy byX
+        |> Seq.map snd
+        |> Seq.toArray
+    
+    String.Join ("", r)
+
+let showScaffold (m : Map<Vector, Char>)
+    =
+    let byY ((_, y), _) = y
+
+    let (_, h) =
+        Map.toSeq m
+        |> Seq.maxBy byY
+        |> fst
+
+    { 0 .. h }
+    |> Seq.map (row m)
+    |> Seq.iter (printfn "%s")
+
 [<EntryPoint>]
 let main argv =
     let prg = (File.ReadAllText argv.[0]).Split([|','|])
@@ -161,18 +290,35 @@ let main argv =
 
     let ms = Array.create (1000 * 1000) 0L
 
-    let is = List.singleton 2L
+    Array.set prg 0 2L
+    let routine = "A,B,B,C,C,A,B,B,C,A"
+    let fnA = "R,4,R,12,R,10,L,12"
+    let fnB = "L,12,R,4,R,12"
+    let fnC = "L,12,L,8,R,10"
+    let feed = "n\n"
+    let is = 
+        String.Join("\n", [|routine; fnA;fnB;fnC;feed|])
+        |> Seq.map (int64 << char)
+        |> Seq.toList
     
     let (_, os', ms', _) = compute (init ms prg is) 0 
     
-    let m = model (os' |> List.rev |> List.map char)
-    let r =
-        excludeBorder m
-        |> List.filter (isIntersection m)
+    // let m = model (os' |> List.rev |> List.map char)
+    // let robot = initialRobot m
+    // let path = 
+    //     pathToEnd m robot []
+    //     |> List.map showPath
         
     
-    printfn "%s" <| showOutput os'
-    printfn "\n\nintersection count: %i" (r |> List.length)
-    printfn "result: %i" (r |> List.sumBy (fun (x, y) -> x * y))
-    
+    // showScaffold m
+    // // printf "\n\n"
+    // printfn "Initial robot: %A" robot
+    // printfn "Path:"
+    // List.rev path
+    //     |> List.iter
+    //        (fun x -> printfn "%s" x)
+
+    printfn "space dust collected: %i" (Seq.head os')
+        
+
     0
