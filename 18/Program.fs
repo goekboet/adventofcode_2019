@@ -36,6 +36,36 @@ let getAdjacent
     
 type Key = Char
 let isKey = Char.IsLower
+
+type KeySet = int32
+
+let emptyKeySet : KeySet = 0
+
+let addKey 
+    (set : KeySet) 
+    (k : Key)
+    =
+    let o = 1 <<< ((int k) - (int 'a'))
+    set ||| o
+
+let fromKeys
+    (keys : seq<Key>)
+    =
+    Seq.fold addKey emptyKeySet keys
+
+let isSubset
+    (s : KeySet)
+    (s' : KeySet)
+    =
+    (s &&& s') = s'
+
+let containsKey
+    (k : Key)
+    (set : KeySet)
+    =
+    let s' = 1 <<< ((int k) - (int 'a'))
+    isSubset set s' 
+
 type Door = Char
 let isDoor = Char.IsUpper
 
@@ -54,15 +84,15 @@ let rec traceBack
     (map : Map<Vector, Tile>)
     ((cv, cd) : Vector * Distance)
     (vis : Map<Vector,Distance>)
-    (doors : Set<Key>)
-    : Set<Key>
+    (doors : KeySet)
+    : KeySet
     =
     let t = Map.find cv map
     if cd = 0
     then doors
     else
         let vis' = Map.remove cv vis
-        let doors' = if isDoor t then Set.add (Char.ToLower t) doors else doors
+        let doors' = if isDoor t then addKey doors (Char.ToLower t) else doors
         let adj = getAdjacent map cv
         let path cand (v, _) = List.contains v cand 
         let curr' = 
@@ -87,7 +117,7 @@ let pair
            List.choose (node k) keys
            |> List.groupBy (fun (k,_,_) -> k))
     
-type Edge = Key * Distance * Set<Key>
+type Edge = Key * Distance * KeySet
 
 let rec pathToKey
     (map : Map<Vector, Tile>)
@@ -101,7 +131,7 @@ let rec pathToKey
     | (v, d) :: vs ->
         if (v = target)
         then
-            let ks = traceBack map (v, d) vis Set.empty
+            let ks = traceBack map (v, d) vis emptyKeySet
             let k = Map.find v map 
             Some (k, d, ks)
         else
@@ -129,20 +159,21 @@ type Tree =
     | Node of Distance * Tree seq     
 
 let chooseEdges
-    (candidates : list<Key * Distance * Set<Key>>)
-    (keyring : Set<Key>)
+    (candidates : list<Key * Distance * KeySet>)
+    (keyring : KeySet)
     =
     candidates
-    |> List.filter (fun (k, _, ds) -> Set.isSubset ds keyring && Set.contains k keyring |> not)
+    |> List.filter (fun (k, _, ds) -> isSubset keyring ds && (containsKey k keyring |> not))
     |> List.map (fun (v, d, _) -> (v, d))
+    |> List.sortBy (fun (_, d) -> d)
 
 let rec traverse
     (lookup : Map<Key, list<Edge>>)
-    (keyring : Set<Key>)
+    (keyring : KeySet)
     (current : Key)
     (distance : Distance)
     =
-    let keyring' = Set.add current keyring
+    let keyring' = if current <> '@' then addKey keyring current else keyring
     let edges = Map.find current lookup
     let next = chooseEdges edges keyring'
     
@@ -150,6 +181,14 @@ let rec traverse
     then Leaf distance
     else
         Node (distance, Seq.map (fun (k, d) -> traverse lookup keyring' k (distance + d)) next)
+
+let rec toList
+    (acc : list<int>)
+    (t : Tree)
+    =
+    match t with
+    | Leaf d -> d :: acc
+    | Node (_, ns) -> Seq.fold toList acc ns 
 
 let rec getMin 
     (running : Option<Distance>)
@@ -169,7 +208,7 @@ let rec getMin
         if discardBranch running d
         then running 
         else Seq.fold getMin running cs
-    
+
 let getKeys 
     (map : Map<Vector, Tile>)
     : list<Key * Vector>
@@ -187,21 +226,75 @@ let readMap p
     File.ReadAllText p
     |> toMap
 
+
+let rec djikstra
+    (lookup : Map<Key, list<Edge>>)
+    (allKeys : KeySet)
+    (distances : Map<Key * KeySet, Distance>)
+    (current : Key * KeySet * Distance)
+    =
+    let addIfCloser 
+        (ds : Map<Key * KeySet, Distance>)
+        ((k, ks, d) : Key * KeySet * Distance)
+        : Map<Key * KeySet, Distance>
+        =
+        let d' = 
+            Map.tryFind (k, ks) ds
+            |> Option.map (fun d' -> if d < d' then d else d')
+            |> Option.defaultValue d
+
+        Map.add (k, ks) d' ds 
+
+    let (cK, cKs, cD) = current
+    let distances' = Map.remove (cK, cKs) distances
+    let cKs' = if cK <> '@' then addKey cKs cK else cKs
+    if (cKs' = allKeys) 
+        then 
+            cD
+        else 
+        let edges = Map.find cK lookup
+        let distances'' = 
+            chooseEdges edges cKs'
+            |> List.map (fun (k, d) -> (k, addKey cKs k, cD + d))
+            |> List.fold addIfCloser distances'
+
+        let ((nK, nKs), nD) =
+            distances''
+            |> Map.toSeq
+            |> Seq.minBy (fun (_,d) -> d)
+
+        djikstra lookup allKeys distances'' (nK, nKs, nD)
+
 [<EntryPoint>]
 let main argv =
     let map = readMap argv.[0]
 
     let keys = getKeys map
     let lookup = pathMap map keys
-    let keyring = Set.empty
-    let distance = 0
-    
-    let r = 
-        traverse lookup keyring '@' distance
-        |> getMin None
-        |> Option.map string
-        |> Option.defaultValue "n/a"
+    let keyring = emptyKeySet
+    let allKeys =
+        keys
+        |> List.map fst
+        |> List.filter ((<>) '@')
+        |> fromKeys
 
-    printfn "%s" r
+    let distance = 0
+    let ds = 
+        [(('@', 0), 0)]
+        |> Map.ofList
+
+    let r' = djikstra lookup allKeys ds ('@', 0, 0)
+    
+    printfn "%i" r'
+
+    // let t = traverse lookup keyring '@' distance
+
+    // let r = 
+    //     t
+    //     |> getMin None
+    //     |> Option.map string
+    //     |> Option.defaultValue "n/a"
+
+    // printfn "%s" r
     
     0 // return an integer exit code
