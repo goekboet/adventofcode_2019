@@ -2,6 +2,7 @@
 
 open System
 open System.IO
+open FSharpx.Collections
 
 type Vector = (int * int)
 type Tile = char
@@ -226,6 +227,92 @@ let readMap p
     File.ReadAllText p
     |> toMap
 
+let rec djikstra''
+    (lookup : Map<Key, list<Edge>>)
+    (allKeys : KeySet)
+    (unvisited : Map<Key * KeySet, Distance>)
+    : Distance
+    =
+    let getClosest (m : Map<Key * KeySet, Distance>)
+        =
+        let (k, v) =
+            m |> Map.toSeq
+              |> Seq.minBy (fun (_, d) -> d)
+        let m' = Map.remove k m
+        
+        ((k,v), m')
+
+    let updateIfCloser
+        (m : Map<Key * KeySet, Distance>)
+        ((d, k, ks) : Distance * Key * KeySet)
+        =
+        Map.tryFind (k, ks) m
+        |> Option.map (fun d' -> Map.add (k, ks) (min d d') m )
+        |> Option.defaultValue (Map.add (k, ks) d m)
+
+    match Map.isEmpty unvisited with
+    | true -> 0
+    | false ->
+        let (((k, ks), d), unvisited') = getClosest unvisited
+        
+        let reachable (k', _, ks') = isSubset ks ks' && (containsKey k' ks |> not)
+        let toTentable (k', d', _) = (d + d', k', addKey ks k')
+
+        if ks = allKeys
+        then d
+        else
+            let adj = 
+                Map.find k lookup
+                |> List.filter reachable
+                |> List.map toTentable
+
+            let unvisited'' =
+                List.fold updateIfCloser unvisited' adj
+
+            djikstra'' lookup allKeys unvisited''
+
+let rec djikstra'
+    (lookup : Map<Key, list<Edge>>)
+    (allKeys : KeySet)
+    (unvisited : list<Distance * Key * KeySet>)
+    : Distance
+    =
+    match unvisited with
+    | [] -> 0
+    | (d, k, ks) :: unvisited' ->
+        let reachable (k', _, ks') = isSubset ks ks' && (containsKey k' ks |> not)
+        let toTentable (k', d', _) = (d + d', k', addKey ks k')
+        let updateIfCloser
+            (xs : list<Distance * Key * KeySet>)
+            ((d, k, ks) : Distance * Key * KeySet)
+            : list<Distance * Key * KeySet>
+            =
+            let (u, xs') =
+                List.fold (fun (f, xs') (d', k', ks') -> 
+                    if f |> not && k = k' && ks = ks' 
+                    then (true, (min d d', k', ks') :: xs') 
+                    else (false, (d', k', ks') :: xs')) 
+                    (false, []) 
+                    xs
+
+            if u
+            then xs'
+            else (d, k, ks) :: xs'
+
+        if ks = allKeys
+        then d
+        else
+            let adj = 
+                Map.find k lookup
+                |> List.filter reachable
+                |> List.map toTentable
+
+            let unvisited'' =
+                List.fold updateIfCloser unvisited' adj
+                |> List.sort
+
+            djikstra' lookup allKeys unvisited''
+            
 
 let rec djikstra
     (lookup : Map<Key, list<Edge>>)
@@ -271,6 +358,7 @@ let main argv =
 
     let keys = getKeys map
     let lookup = pathMap map keys
+    printfn "Generated lookup"
     let keyring = emptyKeySet
     let allKeys =
         keys
@@ -279,11 +367,9 @@ let main argv =
         |> fromKeys
 
     let distance = 0
-    let ds = 
-        [(('@', 0), 0)]
-        |> Map.ofList
-
-    let r' = djikstra lookup allKeys ds ('@', 0, 0)
+    // let ds =[(0,'@',emptyKeySet)]
+    let ds =[(('@',emptyKeySet), 0)] |> Map.ofList
+    let r' = djikstra'' lookup allKeys ds 
     
     printfn "%i" r'
 
