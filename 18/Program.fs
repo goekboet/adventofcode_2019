@@ -155,61 +155,6 @@ let pathMap
     |> List.map (fun (k, ns) -> (k, List.choose (fun (_, v, v') -> pathToKey map [(v, 0)] v' Map.empty) ns))
     |> Map.ofList
 
-type Tree =
-    | Leaf of Distance
-    | Node of Distance * Tree seq     
-
-let chooseEdges
-    (candidates : list<Key * Distance * KeySet>)
-    (keyring : KeySet)
-    =
-    candidates
-    |> List.filter (fun (k, _, ds) -> isSubset keyring ds && (containsKey k keyring |> not))
-    |> List.map (fun (v, d, _) -> (v, d))
-    |> List.sortBy (fun (_, d) -> d)
-
-let rec traverse
-    (lookup : Map<Key, list<Edge>>)
-    (keyring : KeySet)
-    (current : Key)
-    (distance : Distance)
-    =
-    let keyring' = if current <> '@' then addKey keyring current else keyring
-    let edges = Map.find current lookup
-    let next = chooseEdges edges keyring'
-    
-    if List.isEmpty next
-    then Leaf distance
-    else
-        Node (distance, Seq.map (fun (k, d) -> traverse lookup keyring' k (distance + d)) next)
-
-let rec toList
-    (acc : list<int>)
-    (t : Tree)
-    =
-    match t with
-    | Leaf d -> d :: acc
-    | Node (_, ns) -> Seq.fold toList acc ns 
-
-let rec getMin 
-    (running : Option<Distance>)
-    (t : Tree) 
-    =
-    let tryRunning r v = 
-        if r |> Option.map ((<) v) |> Option.defaultValue true
-        then Some v
-        else r
-
-    let discardBranch r b =
-        r |> Option.map ((>) b) |> Option.defaultValue false
-
-    match t with
-    | Leaf d -> tryRunning running d
-    | Node (d, cs) -> 
-        if discardBranch running d
-        then running 
-        else Seq.fold getMin running cs
-
 let getKeys 
     (map : Map<Vector, Tile>)
     : list<Key * Vector>
@@ -227,7 +172,7 @@ let readMap p
     File.ReadAllText p
     |> toMap
 
-let rec djikstra''
+let rec djikstra
     (lookup : Map<Key, list<Edge>>)
     (allKeys : KeySet)
     (unvisited : Map<Key * KeySet, Distance>)
@@ -238,6 +183,7 @@ let rec djikstra''
         let (k, v) =
             m |> Map.toSeq
               |> Seq.minBy (fun (_, d) -> d)
+
         let m' = Map.remove k m
         
         ((k,v), m')
@@ -269,88 +215,7 @@ let rec djikstra''
             let unvisited'' =
                 List.fold updateIfCloser unvisited' adj
 
-            djikstra'' lookup allKeys unvisited''
-
-let rec djikstra'
-    (lookup : Map<Key, list<Edge>>)
-    (allKeys : KeySet)
-    (unvisited : list<Distance * Key * KeySet>)
-    : Distance
-    =
-    match unvisited with
-    | [] -> 0
-    | (d, k, ks) :: unvisited' ->
-        let reachable (k', _, ks') = isSubset ks ks' && (containsKey k' ks |> not)
-        let toTentable (k', d', _) = (d + d', k', addKey ks k')
-        let updateIfCloser
-            (xs : list<Distance * Key * KeySet>)
-            ((d, k, ks) : Distance * Key * KeySet)
-            : list<Distance * Key * KeySet>
-            =
-            let (u, xs') =
-                List.fold (fun (f, xs') (d', k', ks') -> 
-                    if f |> not && k = k' && ks = ks' 
-                    then (true, (min d d', k', ks') :: xs') 
-                    else (false, (d', k', ks') :: xs')) 
-                    (false, []) 
-                    xs
-
-            if u
-            then xs'
-            else (d, k, ks) :: xs'
-
-        if ks = allKeys
-        then d
-        else
-            let adj = 
-                Map.find k lookup
-                |> List.filter reachable
-                |> List.map toTentable
-
-            let unvisited'' =
-                List.fold updateIfCloser unvisited' adj
-                |> List.sort
-
-            djikstra' lookup allKeys unvisited''
-            
-
-let rec djikstra
-    (lookup : Map<Key, list<Edge>>)
-    (allKeys : KeySet)
-    (distances : Map<Key * KeySet, Distance>)
-    (current : Key * KeySet * Distance)
-    =
-    let addIfCloser 
-        (ds : Map<Key * KeySet, Distance>)
-        ((k, ks, d) : Key * KeySet * Distance)
-        : Map<Key * KeySet, Distance>
-        =
-        let d' = 
-            Map.tryFind (k, ks) ds
-            |> Option.map (fun d' -> if d < d' then d else d')
-            |> Option.defaultValue d
-
-        Map.add (k, ks) d' ds 
-
-    let (cK, cKs, cD) = current
-    let distances' = Map.remove (cK, cKs) distances
-    let cKs' = if cK <> '@' then addKey cKs cK else cKs
-    if (cKs' = allKeys) 
-        then 
-            cD
-        else 
-        let edges = Map.find cK lookup
-        let distances'' = 
-            chooseEdges edges cKs'
-            |> List.map (fun (k, d) -> (k, addKey cKs k, cD + d))
-            |> List.fold addIfCloser distances'
-
-        let ((nK, nKs), nD) =
-            distances''
-            |> Map.toSeq
-            |> Seq.minBy (fun (_,d) -> d)
-
-        djikstra lookup allKeys distances'' (nK, nKs, nD)
+            djikstra lookup allKeys unvisited''
 
 [<EntryPoint>]
 let main argv =
@@ -358,29 +223,15 @@ let main argv =
 
     let keys = getKeys map
     let lookup = pathMap map keys
-    printfn "Generated lookup"
-    let keyring = emptyKeySet
     let allKeys =
         keys
         |> List.map fst
         |> List.filter ((<>) '@')
         |> fromKeys
 
-    let distance = 0
-    // let ds =[(0,'@',emptyKeySet)]
     let ds =[(('@',emptyKeySet), 0)] |> Map.ofList
-    let r' = djikstra'' lookup allKeys ds 
+    let r' = djikstra lookup allKeys ds 
     
     printfn "%i" r'
 
-    // let t = traverse lookup keyring '@' distance
-
-    // let r = 
-    //     t
-    //     |> getMin None
-    //     |> Option.map string
-    //     |> Option.defaultValue "n/a"
-
-    // printfn "%s" r
-    
     0 // return an integer exit code
